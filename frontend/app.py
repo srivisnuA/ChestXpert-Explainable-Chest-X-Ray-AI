@@ -8,12 +8,14 @@ It does not provide a diagnosis.
 """
 
 import os
+import tempfile
 
 import streamlit as st
 from PIL import Image
 
 from app.explainability.overlay import cam_to_overlay
 from app.inference.predict import ChestXpertPredictor
+from app.preprocessing.dicom import dicom_to_pil
 
 
 st.set_page_config(
@@ -45,14 +47,27 @@ threshold = st.sidebar.slider(
 
 uploaded = st.file_uploader(
     "Upload a chest X-ray",
-    type=["png", "jpg", "jpeg"],
+    type=["png", "jpg", "jpeg", "dcm"],
 )
 
 if uploaded is None:
-    st.info("Upload a chest X-ray to run the model.")
+    st.info("Upload a chest X-ray image or DICOM file to run the model.")
     st.stop()
 
-image = Image.open(uploaded).convert("RGB")
+try:
+    if uploaded.name.lower().endswith(".dcm"):
+        with tempfile.NamedTemporaryFile(suffix=".dcm", delete=False) as temp:
+            temp.write(uploaded.getvalue())
+            dicom_path = temp.name
+        try:
+            image = dicom_to_pil(dicom_path)
+        finally:
+            os.unlink(dicom_path)
+    else:
+        image = Image.open(uploaded).convert("RGB")
+except Exception as exc:
+    st.error(f"Could not read the uploaded image: {exc}")
+    st.stop()
 
 if not os.path.exists(checkpoint):
     st.error(
