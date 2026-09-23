@@ -50,7 +50,7 @@ def main():
         Path("outputs") / f"gradcam_{args.finding.lower().replace(' ', '_')}.png"
     )
     output.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(overlay).save(output)
+    overlay.save(output)
 
     print(f"Finding: {args.finding}")
     print(f"Probability: {result['probability']:.4f}")
