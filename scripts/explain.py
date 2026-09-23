@@ -47,7 +47,7 @@ def main():
     )
 
     output = Path(args.output) if args.output else Path(
-        "outputs" / f"gradcam_{args.finding.lower().replace(' ', '_')}.png"
+        Path("outputs") / f"gradcam_{args.finding.lower().replace(' ', '_')}.png"
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(overlay).save(output)
