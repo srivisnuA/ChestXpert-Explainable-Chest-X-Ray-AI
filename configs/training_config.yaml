@@ -1,0 +1,39 @@
+data:
+  name: "NIH ChestX-ray14"
+  root_dir: "data/raw/NIH_ChestXray14"
+  metadata_csv: "Data_Entry_2017_v2020.csv"
+  images_dir: "images"
+  train_list: "train_val_list.txt"
+  test_list: "test_list.txt"
+
+experiment:
+  seed: 42
+  image_size: 224
+  batch_size: 32
+  num_workers: 2
+
+model:
+  architecture: "resnet18"
+  pretrained: true
+  num_classes: 14
+
+training:
+  epochs: 10
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+
+labels:
+  - Atelectasis
+  - Cardiomegaly
+  - Consolidation
+  - Edema
+  - Effusion
+  - Emphysema
+  - Fibrosis
+  - Hernia
+  - Infiltration
+  - Mass
+  - Nodule
+  - Pleural Thickening
+  - Pneumonia
+  - Pneumothorax
