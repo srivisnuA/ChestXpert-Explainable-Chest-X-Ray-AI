@@ -1,13 +1,15 @@
 """Train the ChestXpert baseline.
 
-This script expects NIH ChestX-ray14 to have been downloaded separately.
-It uses the official train/test image lists to avoid mixing the held-out
-test set into training.
+The NIH ChestX-ray14 dataset must be downloaded separately. Training uses
+the published train_val_list.txt pool and keeps test_list.txt held out.
 
-Usage:
+Examples:
     python scripts/train.py
+    python scripts/train.py --epochs 3 --batch-size 16
+    python scripts/train.py --epochs 10 --batch-size 32 --num-workers 4
 """
 
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -15,7 +17,6 @@ import pandas as pd
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
-from torchvision import transforms
 
 from app.inference.model import build_model, save_checkpoint
 from app.preprocessing.dataset import LABELS, ChestXrayDataset, expand_labels, load_metadata
@@ -31,7 +32,7 @@ CHECKPOINT_DIR = Path("models/checkpoints")
 
 
 def read_image_list(path: Path) -> set[str]:
-    return set(path.read_text().splitlines())
+    return {line.strip() for line in path.read_text().splitlines() if line.strip()}
 
 
 def make_splits(df: pd.DataFrame):
@@ -45,6 +46,14 @@ def make_splits(df: pd.DataFrame):
     if overlap:
         raise RuntimeError(f"Train/test overlap detected: {len(overlap)} images")
 
+    missing_train = train_names - set(train_df["Image Index"])
+    missing_test = test_names - set(test_df["Image Index"])
+    if missing_train or missing_test:
+        raise RuntimeError(
+            "Split manifest contains images missing from metadata: "
+            f"train={len(missing_train)}, test={len(missing_test)}"
+        )
+
     return train_df, test_df
 
 
@@ -55,7 +64,27 @@ def compute_pos_weight(train_df: pd.DataFrame) -> torch.Tensor:
     return torch.tensor(negatives / positives, dtype=torch.float32)
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train ChestXpert ResNet-18.")
+    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--num-workers", type=int, default=2)
+    parser.add_argument("--learning-rate", type=float, default=1e-4)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--checkpoint", default=str(CHECKPOINT_DIR / "resnet18_latest.pt"))
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
+
+    if args.epochs < 1:
+        raise ValueError("--epochs must be at least 1")
+    if args.batch_size < 1:
+        raise ValueError("--batch-size must be at least 1")
+    if args.num_workers < 0:
+        raise ValueError("--num-workers cannot be negative")
+
     required = [METADATA, TRAIN_LIST, TEST_LIST, IMAGE_DIR]
     missing = [str(p) for p in required if not p.exists()]
     if missing:
@@ -63,8 +92,8 @@ def main() -> None:
             "Dataset is not configured. Missing: " + ", ".join(missing)
         )
 
-    torch.manual_seed(42)
-    np.random.seed(42)
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
 
     df = expand_labels(load_metadata(METADATA))
     train_df, test_df = make_splits(df)
@@ -80,28 +109,41 @@ def main() -> None:
         transform=evaluation_transforms(),
     )
 
-    train_loader = DataLoader(train_ds, batch_size=32, shuffle=True, num_workers=2)
-    test_loader = DataLoader(test_ds, batch_size=32, shuffle=False, num_workers=2)
+    print(f"Train images: {len(train_ds):,}")
+    print(f"Held-out test images: {len(test_ds):,}")
+
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.num_workers,
+        pin_memory=torch.cuda.is_available(),
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Device: {device}")
+
     model = build_model(num_classes=len(LABELS), pretrained=True).to(device)
 
-    criterion = nn.BCEWithLogitsLoss(pos_weight=compute_pos_weight(train_df).to(device))
+    criterion = nn.BCEWithLogitsLoss(
+        pos_weight=compute_pos_weight(train_df).to(device)
+    )
     optimizer = torch.optim.AdamW(
         model.parameters(),
-        lr=1e-4,
+        lr=args.learning_rate,
         weight_decay=1e-4,
     )
 
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = Path(args.checkpoint)
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
-    for epoch in range(1, 11):
+    for epoch in range(1, args.epochs + 1):
         model.train()
         running_loss = 0.0
 
         for images, targets in train_loader:
-            images = images.to(device)
-            targets = targets.to(device)
+            images = images.to(device, non_blocking=True)
+            targets = targets.to(device, non_blocking=True)
 
             optimizer.zero_grad(set_to_none=True)
             logits = model(images)
@@ -112,16 +154,20 @@ def main() -> None:
             running_loss += loss.item() * images.size(0)
 
         train_loss = running_loss / len(train_ds)
-        print(f"Epoch {epoch:02d}/10 - train_loss={train_loss:.4f}")
+        print(
+            f"Epoch {epoch:02d}/{args.epochs} - "
+            f"train_loss={train_loss:.4f}"
+        )
 
         save_checkpoint(
             model,
-            str(CHECKPOINT_DIR / "resnet18_latest.pt"),
+            str(checkpoint_path),
             epoch,
             list(LABELS),
         )
 
-    print(f"Training complete. Held-out test images: {len(test_ds):,}")
+    print(f"Training complete. Checkpoint: {checkpoint_path}")
+    print("Next: run scripts/evaluate.py on the held-out test split.")
 
 
 if __name__ == "__main__":
