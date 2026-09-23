@@ -8,6 +8,7 @@ from PIL import Image
 from app.explainability.gradcam import GradCAM
 from app.inference.model import build_model
 from app.preprocessing.dataset import LABELS
+from app.preprocessing.dicom import dicom_to_pil
 from app.preprocessing.transforms import evaluation_transforms
 
 
@@ -57,21 +58,19 @@ class ChestXpertPredictor:
         tensor = self._prepare_image(image)
         return self._predict_tensor(tensor, threshold=threshold)
 
-    def predict(
-        self, image_path: str, threshold: float = 0.5
-    ) -> list[dict]:
+    def predict(self, image_path: str, threshold: float = 0.5) -> list[dict]:
         path = Path(image_path)
         if not path.exists():
             raise FileNotFoundError(path)
 
-        image = Image.open(path).convert("RGB")
+        if path.suffix.lower() == ".dcm":
+            image = dicom_to_pil(path)
+        else:
+            image = Image.open(path).convert("RGB")
+
         return self.predict_from_image(image, threshold=threshold)
 
-    def explain(
-        self,
-        image: Image.Image,
-        class_index: int,
-    ) -> torch.Tensor:
+    def explain(self, image: Image.Image, class_index: int) -> torch.Tensor:
         """Generate a normalized Grad-CAM map for one model output."""
         if not 0 <= class_index < len(self.labels):
             raise ValueError(f"class_index must be in [0, {len(self.labels) - 1}]")
@@ -83,11 +82,7 @@ class ChestXpertPredictor:
         finally:
             cam.close()
 
-    def explain_finding(
-        self,
-        image: Image.Image,
-        finding: str,
-    ) -> torch.Tensor:
+    def explain_finding(self, image: Image.Image, finding: str) -> torch.Tensor:
         """Generate Grad-CAM for a finding name."""
         if finding not in self.labels:
             raise ValueError(f"Unknown finding: {finding}")
