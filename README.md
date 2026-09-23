@@ -17,6 +17,7 @@ Chest X-ray → preprocessing → PyTorch model → abnormality probabilities �
 - Per-label AUROC, average precision, precision, recall and F1 evaluation
 - Grad-CAM implementation targeting the final ResNet convolutional block
 - PIL-image inference API shared by CLI and Streamlit
+- Research-oriented DICOM pixel loading with pydicom
 - Streamlit demo with selectable Grad-CAM overlays
 - Flask health and prediction endpoints
 - Automated unit tests for dataset, metrics, explainability and preprocessing logic
@@ -66,7 +67,7 @@ Run the Streamlit demo:
 streamlit run frontend/app.py
 ```
 
-The Streamlit interface accepts an X-ray image, displays model probabilities, shows findings crossing the selected threshold, and generates a Grad-CAM overlay for a selected finding.
+The Streamlit interface accepts PNG/JPEG or DICOM X-ray input, displays model probabilities, shows findings crossing the selected threshold, and generates a Grad-CAM overlay for a selected finding.
 
 ## API
 
@@ -104,7 +105,7 @@ pytest -q
 
 - Run reproducible training and record actual held-out test metrics
 - Add calibration analysis and threshold selection
-- Expand DICOM/pydicom support
+- Expand DICOM/pydicom support for broader clinical metadata and presentation-state workflows
 - Add structured finding export suitable for downstream research workflows
 - Add deployment documentation
 
