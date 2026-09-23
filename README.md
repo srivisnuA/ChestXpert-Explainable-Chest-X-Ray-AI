@@ -226,7 +226,7 @@ The API structure is intended as a starting point for downstream research integr
 Run:
 
 ```bash
-streamlit run frontend/app.py
+streamlit run frontend/streamlit_app.py
 ```
 
 The demo provides:
