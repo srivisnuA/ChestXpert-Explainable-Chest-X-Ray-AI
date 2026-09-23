@@ -4,58 +4,45 @@ ChestXpert is a research/educational prototype for chest X-ray abnormality class
 
 > **Medical safety:** This project is not a medical device and must not be used to diagnose, triage or treat patients. Model outputs require qualified clinician review.
 
-## Planned pipeline
+## Pipeline
 
-Chest X-ray → preprocessing → PyTorch model → abnormality probabilities → evaluation → visual explanation → REST API → demo interface.
+Chest X-ray → preprocessing → PyTorch model → abnormality probabilities → per-label evaluation → Grad-CAM explanation → REST API → demo interface.
 
-## Planned capabilities
+## Current implementation
 
-- Chest X-ray image validation and preprocessing
-- Transfer-learning-based PyTorch classifier
-- Multi-label abnormality prediction
-- Precision, recall, F1 and AUROC evaluation
-- Class-imbalance analysis
-- Grad-CAM-style visual explanations
-- Confidence-aware inference
-- Flask REST API
-- Dockerized deployment
-- Reproducible training/evaluation workflow
+- NIH ChestX-ray14 multi-label dataset configuration
+- ResNet-18 transfer-learning baseline
+- Class-imbalance-aware BCE training objective
+- Official train/test list separation
+- Per-label AUROC, average precision, precision, recall and F1 evaluation
+- Grad-CAM implementation for visual explanation
+- Automated unit tests for dataset, metrics and explainability logic
+- Flask service scaffold
+- Docker deployment scaffold
 
-## Repository structure
+## Evaluation
 
-```
-ChestXpert/
-├── app/
-│   ├── api/
-│   ├── inference/
-│   ├── preprocessing/
-│   └── explainability/
-├── data/
-│   └── README.md
-├── models/
-│   └── README.md
-├── notebooks/
-├── scripts/
-├── tests/
-├── frontend/
-├── app.py
-├── requirements.txt
-├── Dockerfile
-└── .gitignore
+After training, run:
+
+```bash
+python scripts/evaluate.py --checkpoint models/checkpoints/resnet18_latest.pt
 ```
 
-## Project status
+The evaluation writes:
 
-🚧 Phase 1 — repository scaffold.
+- `outputs/test_metrics.json`
+- `outputs/test_metrics.csv`
 
-Next phases will add the public dataset configuration, preprocessing pipeline, model training, held-out evaluation, explainability and API.
+No clinical performance claim is made until the model is actually trained and evaluated on the held-out test split.
 
-## Dataset and privacy
+## Planned next steps
 
-Research datasets will be downloaded separately and will **not** be committed to this repository. No patient-identifiable information should be added to the repository.
+- Run reproducible training and record actual test metrics
+- Add inference service with image upload
+- Add clinician-oriented demo interface
+- Add calibration analysis and threshold selection
+- Add deployment documentation
 
-Dataset-specific licenses and usage conditions remain applicable to their respective sources.
+## Important
 
-## Disclaimer
-
-This software is intended for research and educational demonstration only. It does not provide medical advice or a clinical diagnosis.
+Do not interpret model probability scores as a diagnosis. Grad-CAM visualizations indicate model-associated regions and are not proof of clinical causality.
