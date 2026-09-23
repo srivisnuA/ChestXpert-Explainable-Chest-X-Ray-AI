@@ -1,15 +1,26 @@
 from flask import Flask, jsonify
 
-app = Flask(__name__)
+from app.api import api
 
 
-@app.get("/health")
-def health():
-    return jsonify({
-        "status": "ok",
-        "service": "chestxpert",
-        "model_loaded": False,
-    })
+def create_app() -> Flask:
+    application = Flask(__name__)
+    application.register_blueprint(api, url_prefix="/api")
+
+    @application.get("/")
+    def index():
+        return jsonify(
+            {
+                "service": "ChestXpert",
+                "description": "Explainable chest X-ray AI research prototype",
+                "endpoints": ["/api/health", "/api/predict"],
+            }
+        )
+
+    return application
+
+
+app = create_app()
 
 
 if __name__ == "__main__":
