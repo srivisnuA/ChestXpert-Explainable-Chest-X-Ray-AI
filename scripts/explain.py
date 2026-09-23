@@ -10,7 +10,6 @@ Example:
 import argparse
 from pathlib import Path
 
-import numpy as np
 from PIL import Image
 
 from app.explainability.overlay import cam_to_overlay
@@ -42,7 +41,7 @@ def main():
 
     cam = predictor.explain_finding(image, args.finding)
     overlay = cam_to_overlay(
-        np.asarray(image),
+        image,
         cam.numpy(),
         alpha=0.45,
     )
