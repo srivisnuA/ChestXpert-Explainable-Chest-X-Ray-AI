@@ -148,6 +148,27 @@ outputs/threshold_analysis.csv
 
 These are **development thresholds for engineering analysis only**, not clinically calibrated thresholds.
 
+## Calibration diagnostics
+
+Run:
+
+```powershell
+python scripts/calibration.py `
+  --checkpoint models/checkpoints/resnet18_latest.pt `
+  --data-root data/raw/NIH_ChestXray14_subset `
+  --batch-size 16 `
+  --num-workers 0
+```
+
+This reports per-label Brier score and a simple expected calibration error (ECE). These diagnostics are included to make probability-quality limitations explicit; they are not clinical calibration.
+
+Outputs:
+
+```text
+outputs/calibration.json
+outputs/calibration.csv
+```
+
 ## Grad-CAM explainability
 
 ChestXpert can generate a visual explanation for a selected finding.
