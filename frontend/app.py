@@ -7,15 +7,13 @@ The interface is intentionally framed as a research/educational demo.
 It does not provide a diagnosis.
 """
 
-import io
 import os
 
-import numpy as np
 import streamlit as st
 from PIL import Image
 
+from app.explainability.overlay import cam_to_overlay
 from app.inference.predict import ChestXpertPredictor
-from app.explainability.gradcam import GradCAM
 
 
 st.set_page_config(
@@ -37,12 +35,7 @@ checkpoint = st.sidebar.text_input(
     os.getenv("CHESTXPERT_CHECKPOINT", "models/checkpoints/resnet18_latest.pt"),
 )
 
-uploaded = st.file_uploader(
-    "Upload a chest X-ray",
-    type=["png", "jpg", "jpeg"],
-)
-
-threshold = st.slider(
+threshold = st.sidebar.slider(
     "Flagging threshold",
     min_value=0.05,
     max_value=0.95,
@@ -50,11 +43,16 @@ threshold = st.slider(
     step=0.05,
 )
 
+uploaded = st.file_uploader(
+    "Upload a chest X-ray",
+    type=["png", "jpg", "jpeg"],
+)
+
 if uploaded is None:
     st.info("Upload a chest X-ray to run the model.")
     st.stop()
 
-image = Image.open(io.BytesIO(uploaded.getvalue())).convert("RGB")
+image = Image.open(uploaded).convert("RGB")
 
 if not os.path.exists(checkpoint):
     st.error(
@@ -67,13 +65,6 @@ if not os.path.exists(checkpoint):
 try:
     predictor = ChestXpertPredictor(checkpoint)
     results = predictor.predict_from_image(image, threshold=threshold)
-except AttributeError:
-    # Predictor currently accepts a path; create a temporary upload safely.
-    import tempfile
-
-    with tempfile.NamedTemporaryFile(suffix=".png") as temp:
-        image.save(temp.name)
-        results = predictor.predict(temp.name, threshold=threshold)
 except Exception as exc:
     st.error(f"Inference failed: {exc}")
     st.stop()
@@ -96,11 +87,44 @@ flagged = [r for r in results if r["flagged"]]
 st.subheader("Flagged findings")
 if flagged:
     for result in flagged:
-        st.write(
-            f"- **{result['finding']}** — {result['probability']:.1%}"
-        )
+        st.write(f"- **{result['finding']}** — {result['probability']:.1%}")
 else:
     st.write("No configured finding crossed the selected threshold.")
+
+st.divider()
+st.subheader("Grad-CAM explanation")
+
+st.caption(
+    "Grad-CAM highlights image regions associated with a selected model output. "
+    "It is an interpretability aid, not proof that a finding is present."
+)
+
+finding_options = [result["finding"] for result in results]
+selected_finding = st.selectbox(
+    "Finding to explain",
+    finding_options,
+    index=0,
+)
+
+try:
+    cam = predictor.explain_finding(image, selected_finding)
+    overlay = cam_to_overlay(image, cam.numpy(), alpha=0.45)
+
+    explain_left, explain_right = st.columns(2)
+    with explain_left:
+        st.image(
+            image,
+            caption="Original X-ray",
+            use_container_width=True,
+        )
+    with explain_right:
+        st.image(
+            overlay,
+            caption=f"Grad-CAM — {selected_finding}",
+            use_container_width=True,
+        )
+except Exception as exc:
+    st.error(f"Grad-CAM generation failed: {exc}")
 
 st.info(
     "Probability scores represent model output, not clinical certainty. "
