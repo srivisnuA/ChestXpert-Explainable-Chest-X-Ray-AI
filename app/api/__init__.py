@@ -1,1 +1,3 @@
-"""REST API package."""
+from app.api.routes import api
+
+__all__ = ["api"]
