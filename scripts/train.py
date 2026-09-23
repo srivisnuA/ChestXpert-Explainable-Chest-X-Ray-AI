@@ -72,11 +72,19 @@ def parse_args():
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--checkpoint", default=str(CHECKPOINT_DIR / "resnet18_latest.pt"))
+    parser.add_argument("--data-root", default=str(ROOT), help="Dataset root directory.")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+
+    global ROOT, METADATA, TRAIN_LIST, TEST_LIST, IMAGE_DIR
+    ROOT = Path(args.data_root)
+    METADATA = ROOT / "Data_Entry_2017_v2020.csv"
+    TRAIN_LIST = ROOT / "train_val_list.txt"
+    TEST_LIST = ROOT / "test_list.txt"
+    IMAGE_DIR = ROOT / "images"
 
     if args.epochs < 1:
         raise ValueError("--epochs must be at least 1")
