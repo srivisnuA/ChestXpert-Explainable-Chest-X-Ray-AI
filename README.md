@@ -1,97 +1,249 @@
 # ChestXpert — Explainable Chest X-Ray AI
 
-ChestXpert is a research/educational prototype for chest X-ray abnormality classification and visual model explainability. It is designed as an end-to-end medical-imaging project covering preprocessing, PyTorch training/inference, evaluation, Grad-CAM explainability, REST API integration and a Streamlit demo.
+ChestXpert is a research/educational prototype for **multi-label chest X-ray abnormality classification with explainability**. It demonstrates an end-to-end healthcare-AI engineering workflow: dataset preparation, transfer learning, reproducible training, evaluation, Grad-CAM explanations, DICOM handling, REST API integration, and a Streamlit clinician-review prototype.
 
-> **Medical safety:** This project is not a medical device and must not be used to diagnose, triage or treat patients. Model outputs require qualified clinician review.
+> **Medical safety:** ChestXpert is **not a medical device** and must not be used to diagnose, triage, or treat patients. Predictions and heatmaps require qualified clinician review. The development-subset metrics below are engineering validation results, not clinical performance claims.
 
-## Pipeline
+## Why this project
 
-Chest X-ray → preprocessing → PyTorch model → abnormality probabilities → per-label evaluation → Grad-CAM explanation → REST API / Streamlit demo.
+The project was built to explore practical components relevant to medical-imaging AI:
 
-## Current implementation
-
-- NIH ChestX-ray14 multi-label dataset configuration
-- ResNet-18 transfer-learning baseline
-- Class-imbalance-aware BCE training objective
-- Official train/test list separation
-- Per-label AUROC, average precision, precision, recall and F1 evaluation
-- Grad-CAM implementation targeting the final ResNet convolutional block
-- PIL-image inference API shared by CLI and Streamlit
-- Research-oriented DICOM pixel loading with pydicom
-- Streamlit demo with selectable Grad-CAM overlays
-- Flask health and prediction endpoints
-- Automated unit tests for dataset, metrics, explainability and preprocessing logic
+- Multi-label abnormality prediction rather than single-class classification
+- Transfer learning with PyTorch/ResNet-18
+- Per-finding AUROC, average precision, precision, recall and F1
+- Explainability with Grad-CAM
+- DICOM/PNG/JPEG input
+- Flask REST API for downstream integration
+- Streamlit research/demo interface
+- Reproducible training and evaluation configuration
 - Docker deployment scaffold
 
-## Local setup
+## Architecture
 
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
+```text
+Chest X-ray / DICOM
+        |
+        v
+Image preprocessing
+(224x224 + ImageNet normalization)
+        |
+        v
+ResNet-18 transfer-learning model
+        |
+        v
+14 abnormality probabilities
+        |
+   +----+------------------+
+   |                       |
+   v                       v
+Evaluation             Grad-CAM
+AUROC / AP             visual explanation
+Precision / Recall/F1
+   |                       |
+   +-----------+-----------+
+               v
+        Flask REST API
+               |
+               v
+       Streamlit demo UI
 ```
 
-Prepare the processed metadata:
+## Abnormalities
 
-```bash
-python scripts/prepare_metadata.py
+The baseline predicts 14 NIH ChestX-ray14 labels:
+
+Atelectasis, Cardiomegaly, Consolidation, Edema, Effusion, Emphysema, Fibrosis, Hernia, Infiltration, Mass, Nodule, Pleural Thickening, Pneumonia, and Pneumothorax.
+
+## Dataset
+
+The initial experiment uses a **2,000-image development subset** prepared from NIH ChestX-ray14:
+
+- 1,582 development-train images
+- 418 held-out development-test images
+- 14 multi-label findings
+- No patient-identifiable dataset files are committed to the repository
+
+This subset is intentionally used for rapid engineering validation. It is **not the official full-dataset benchmark** and is not sufficient to establish clinical validity.
+
+## Training
+
+The model uses a torchvision ResNet-18 initialized with ImageNet weights and replaces the final layer with a 14-output classification head.
+
+Example:
+
+```powershell
+$env:PYTHONPATH = (Get-Location).Path
+
+python scripts/train.py `
+  --data-root data/raw/NIH_ChestXray14_subset `
+  --epochs 1 `
+  --batch-size 16 `
+  --num-workers 0
 ```
 
-Train the baseline:
+The completed development training run produced:
 
-```bash
-python scripts/train.py --config configs/training_config.yaml
+```text
+Train images: 1,582
+Held-out test images: 418
+Device: cpu
+Epoch 01/1 - train_loss=1.2652
 ```
 
-Run evaluation:
+Checkpoint:
 
-```bash
-python scripts/evaluate.py --checkpoint models/checkpoints/resnet18_latest.pt
+```text
+models/checkpoints/resnet18_latest.pt
 ```
 
-Run the CLI predictor:
+## Held-out development evaluation
 
-```bash
-python scripts/predict.py --checkpoint models/checkpoints/resnet18_latest.pt --image path/to/xray.png
+The trained checkpoint was evaluated on the 418-image held-out development subset.
+
+| Finding | AUROC | Average Precision | Precision | Recall | F1 |
+|---|---:|---:|---:|---:|---:|
+| Atelectasis | 0.575 | 0.099 | 0.096 | 0.735 | 0.170 |
+| Cardiomegaly | 0.740 | 0.183 | 0.107 | 0.970 | 0.193 |
+| Consolidation | 0.764 | 0.135 | 0.129 | 0.480 | 0.203 |
+| Edema | 0.873 | 0.292 | 0.201 | 0.933 | 0.331 |
+| Effusion | 0.677 | 0.133 | 0.134 | 0.676 | 0.223 |
+| Emphysema | 0.807 | 0.151 | 0.058 | 0.909 | 0.109 |
+| Fibrosis | 0.751 | 0.079 | 0.055 | 0.545 | 0.100 |
+| Hernia | 0.990 | 0.200 | 0.011 | 1.000 | 0.022 |
+| Infiltration | 0.641 | 0.362 | 0.278 | 0.772 | 0.409 |
+| Mass | 0.669 | 0.057 | 0.062 | 0.800 | 0.114 |
+| Nodule | 0.518 | 0.050 | 0.040 | 0.385 | 0.073 |
+| Pleural Thickening | 0.820 | 0.083 | 0.044 | 0.900 | 0.084 |
+| Pneumonia | 0.805 | 0.025 | 0.010 | 1.000 | 0.020 |
+| Pneumothorax | 0.721 | 0.153 | 0.156 | 0.500 | 0.238 |
+
+The fixed 0.5 threshold is intentionally reported as a baseline. The results show substantial class imbalance and a precision/recall trade-off, so the project includes a separate development threshold-analysis script.
+
+### Important interpretation
+
+These numbers **must not be described as clinical accuracy or clinical validation**. The development subset is small and the class distribution is imbalanced. In particular, high recall for some findings occurs alongside low precision.
+
+The project therefore emphasizes transparent per-label evaluation rather than a single headline accuracy number.
+
+## Threshold analysis
+
+Run:
+
+```powershell
+python scripts/threshold_analysis.py `
+  --checkpoint models/checkpoints/resnet18_latest.pt `
+  --data-root data/raw/NIH_ChestXray14_subset `
+  --batch-size 16 `
+  --num-workers 0
 ```
 
-Run the Flask API:
+This searches thresholds from 0.05 to 0.95 and reports the threshold producing the highest F1 for each label on the development subset.
+
+Output:
+
+```text
+outputs/threshold_analysis.json
+outputs/threshold_analysis.csv
+```
+
+These are **development thresholds for engineering analysis only**, not clinically calibrated thresholds.
+
+## Grad-CAM explainability
+
+ChestXpert can generate a visual explanation for a selected finding.
+
+```powershell
+python scripts/explain.py `
+  --checkpoint models/checkpoints/resnet18_latest.pt `
+  --image path/to/xray.png `
+  --finding Edema
+```
+
+The script prints the selected finding probability and saves a heatmap overlay to:
+
+```text
+outputs/gradcam_edema.png
+```
+
+The implementation targets the final ResNet convolutional block. Grad-CAM highlights image regions associated with a model output; it does **not** prove that a highlighted region is pathology.
+
+## DICOM support
+
+Research-oriented DICOM loading is implemented with pydicom.
+
+Supported demo inputs:
+
+- PNG
+- JPEG
+- DICOM (.dcm)
+
+The loader applies pixel-value rescaling, percentile normalization, and MONOCHROME1 handling before converting the image to RGB.
+
+This is not a full clinical DICOM presentation-state or PACS implementation.
+
+## REST API
+
+Start Flask:
 
 ```bash
 python app.py
 ```
 
-Run the Streamlit demo:
+Endpoints:
+
+```text
+GET  /api/health
+POST /api/predict
+```
+
+The prediction endpoint accepts a multipart image upload and returns structured finding probabilities together with a research/clinical-review disclaimer.
+
+The API structure is intended as a starting point for downstream research integration; it is not a production PACS/RIS integration.
+
+## Streamlit demo
+
+Run:
 
 ```bash
 streamlit run frontend/app.py
 ```
 
-The Streamlit interface accepts PNG/JPEG or DICOM X-ray input, displays model probabilities, shows findings crossing the selected threshold, and generates a Grad-CAM overlay for a selected finding.
+The demo provides:
 
-## API
+1. PNG/JPEG/DICOM upload
+2. Model probability table
+3. Configurable flagging threshold
+4. Selected-finding Grad-CAM visualization
+5. Explicit research/clinical-review warnings
 
-- `GET /api/health` — service/model status
-- `POST /api/predict` — multipart image inference
+## Project structure
 
-The API returns model outputs with an explicit research/clinical-review disclaimer.
-
-## Evaluation
-
-The evaluation script writes:
-
-- `outputs/test_metrics.json`
-- `outputs/test_metrics.csv`
-
-No clinical performance claim is made until the model is actually trained and evaluated on the held-out test split. Reported metrics must come from a reproducible run rather than being estimated or copied from a dataset paper.
-
-## Dataset
-
-The first experiment is configured for NIH ChestX-ray14. The dataset and any patient-identifiable data must be downloaded separately and must not be committed to this repository. See `data/README.md` for the expected local layout.
-
-## Explainability
-
-Grad-CAM highlights regions that contribute to a selected model output. In ChestXpert, the final ResNet convolutional block is used as the target layer. The visualization is an interpretability aid and does not establish that a highlighted region represents a real pathology.
+```text
+ChestXpert/
+├── app/
+│   ├── api/                 # Flask API routes
+│   ├── explainability/     # Grad-CAM and overlays
+│   ├── inference/          # model, prediction and metrics
+│   └── preprocessing/      # dataset, transforms and DICOM
+├── configs/                 # training configuration
+├── data/                    # dataset documentation only
+├── frontend/                # Streamlit demo
+├── models/                  # checkpoint documentation
+├── notebooks/               # notebook documentation
+├── scripts/
+│   ├── evaluate.py
+│   ├── explain.py
+│   ├── predict.py
+│   ├── prepare_hf_subset.py
+│   ├── prepare_metadata.py
+│   ├── threshold_analysis.py
+│   └── train.py
+├── tests/
+├── Dockerfile
+├── app.py
+├── requirements.txt
+└── README.md
+```
 
 ## Testing
 
@@ -101,14 +253,23 @@ Run:
 pytest -q
 ```
 
-## Roadmap
+Tests cover dataset behavior, metrics, Grad-CAM, inference preprocessing, and DICOM loading.
 
-- Run reproducible training and record actual held-out test metrics
-- Add calibration analysis and threshold selection
-- Expand DICOM/pydicom support for broader clinical metadata and presentation-state workflows
-- Add structured finding export suitable for downstream research workflows
-- Add deployment documentation
+## API / integration direction
 
-## Important
+The architecture is intentionally modular so that future work can connect:
 
-Do not interpret model probability scores as a diagnosis. This repository is intended for research and portfolio demonstration, not clinical use.
+- DICOM/PACS ingestion
+- structured abnormality findings
+- clinician review workflows
+- calibration and threshold policies
+- larger public medical-imaging datasets
+- downstream healthcare applications
+
+## Responsible-use statement
+
+ChestXpert is a portfolio/research prototype. It has not been clinically validated, approved as a medical device, or evaluated for patient-care use. Model outputs can be wrong and should not be used as a substitute for qualified clinical judgment.
+
+## License / data
+
+Do not commit downloaded medical datasets or patient-identifiable information. Follow the license and terms of use of any dataset used for experiments.
