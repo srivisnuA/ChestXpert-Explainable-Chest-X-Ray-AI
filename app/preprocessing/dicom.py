@@ -15,11 +15,21 @@ def dicom_to_pil(path: str | Path) -> Image.Image:
     implementation.
     """
     dataset = pydicom.dcmread(str(path))
+    if (int(getattr(dataset, "NumberOfFrames", 1)) != 1 or
+            int(getattr(dataset, "SamplesPerPixel", 1)) != 1 or
+            getattr(dataset, "PhotometricInterpretation", "") not in {"MONOCHROME1", "MONOCHROME2"}):
+        raise ValueError("Only single-frame monochrome DICOM images are supported")
+    if int(dataset.Rows) * int(dataset.Columns) > 25_000_000:
+        raise ValueError("DICOM exceeds 25 million pixels")
     pixels = dataset.pixel_array.astype(np.float32)
+    if pixels.ndim != 2 or not pixels.size:
+        raise ValueError("Expected a non-empty 2D pixel array")
 
     slope = float(getattr(dataset, "RescaleSlope", 1.0))
     intercept = float(getattr(dataset, "RescaleIntercept", 0.0))
     pixels = pixels * slope + intercept
+    if not np.isfinite(pixels).all():
+        raise ValueError("DICOM pixel values must be finite")
 
     low, high = np.percentile(pixels, [1, 99])
     if high <= low:

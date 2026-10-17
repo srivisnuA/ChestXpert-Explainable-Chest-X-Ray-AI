@@ -59,7 +59,7 @@ def main():
     if not all(path.exists() for path in [metadata, test_list, image_dir]):
         raise FileNotFoundError(f"Test data is not configured under {root}.")
 
-    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     df = expand_labels(load_metadata(metadata))
     test_names = {
         line.strip() for line in test_list.read_text().splitlines() if line.strip()

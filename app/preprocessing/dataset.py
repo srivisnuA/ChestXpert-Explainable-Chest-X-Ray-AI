@@ -64,11 +64,15 @@ class ChestXrayDataset(Dataset):
     def __getitem__(self, index: int):
         row = self.df.iloc[index]
         image_path = self.image_dir / row["Image Index"]
+        root = self.image_dir.resolve()
+        if not image_path.resolve().is_relative_to(root):
+            raise ValueError("Image path must remain inside image_dir")
 
         if not image_path.exists():
             raise FileNotFoundError(f"Image not found: {image_path}")
 
-        image = Image.open(image_path).convert("RGB")
+        with Image.open(image_path) as source:
+            image = source.convert("RGB")
         if self.transform:
             image = self.transform(image)
 

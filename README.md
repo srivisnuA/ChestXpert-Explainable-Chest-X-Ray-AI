@@ -4,6 +4,61 @@ ChestXpert is a research/educational prototype for **multi-label chest X-ray abn
 
 > **Medical safety:** ChestXpert is **not a medical device** and must not be used to diagnose, triage, or treat patients. Predictions and heatmaps require qualified clinician review. The development-subset metrics below are engineering validation results, not clinical performance claims.
 
+## Reproducible engineering checks
+
+```bash
+python -m venv .venv
+# Activate .venv for your shell, then:
+python -m pip install -r requirements-core.txt
+python -m pytest tests -q
+python app.py
+```
+
+`requirements-core.txt` covers the API, inference, preprocessing and tests. The full
+`requirements.txt` additionally includes the existing optional UI and dataset tools.
+The test suite uses synthetic images and random-weight checkpoints, downloads no
+pretrained models, and requires no private dataset. It verifies software behavior;
+it does not establish diagnostic quality. See [verification](docs/VERIFICATION.md).
+
+### API behavior
+
+- `GET /api/health`: lightweight process health, without loading a model.
+- `GET /api/ready`: loads the configured checkpoint once per app and returns 503 if
+  it is absent or invalid. Set `CHESTXPERT_CHECKPOINT` before starting the service.
+- `POST /api/predict`: multipart `image`, PNG/JPEG or single-frame monochrome DICOM.
+  Requests are limited to 16 MiB and decoded images to 25 million pixels. Invalid
+  uploads return controlled JSON errors; temporary files are removed after success
+  and failure, including on Windows. Responses are not cacheable.
+
+The local server binds to loopback. The API has no user authentication and is intended
+for local research use; access control and TLS belong in a controlled deployment.
+Checkpoints must be trusted and match the model/label schema. Restricted PyTorch
+loading reduces pickle execution risk; it does not make arbitrary model files safe.
+
+### Evaluation changes
+
+Threshold tuning now requires an explicit validation manifest reserved from the
+training pool. The training command excludes it; both commands reject image and
+patient overlap when patient identifiers are available. Checkpoints record manifest
+hashes and the tuner verifies the validation hash. Legacy checkpoints remain usable
+for inference but must be retrained with the reserved split before threshold tuning.
+
+```bash
+python -m scripts.train --data-root data/raw/NIH_ChestXray14_subset --validation-list validation.txt --epochs 1 --num-workers 0
+python -m scripts.threshold_analysis --checkpoint models/checkpoints/resnet18_latest.pt --data-root data/raw/NIH_ChestXray14_subset --validation-list validation.txt
+```
+
+Create `validation.txt` with one image filename per line, holding out entire patients
+from the training pool. The test manifest stays untouched. Without `Patient ID`, only
+image isolation can be checked. Undefined AUROC is JSON null for single-class labels;
+average precision is null when there are no positive examples. Macro metrics state
+how many labels contribute, and per-label metrics include support counts.
+
+The historical experiment numbers below were present before this review and were
+not rerun or independently reproduced here. Historical tuned results used the test
+split and must not be treated as independent held-out performance. This review adds
+engineering tests and a corrected tuning workflow, not new medical accuracy claims.
+
 ## Why this project
 
 The project was built to explore practical components relevant to medical-imaging AI:
@@ -133,11 +188,13 @@ Run:
 python scripts/threshold_analysis.py `
   --checkpoint models/checkpoints/resnet18_latest.pt `
   --data-root data/raw/NIH_ChestXray14_subset `
+  --validation-list validation.txt `
   --batch-size 16 `
   --num-workers 0
 ```
 
-This searches thresholds from 0.05 to 0.95 and reports the threshold producing the highest F1 for each label on the development subset.
+This searches thresholds from 0.05 to 0.95 on the explicitly reserved validation
+split. Use the untouched test split only for final evaluation after selecting thresholds.
 
 Output:
 

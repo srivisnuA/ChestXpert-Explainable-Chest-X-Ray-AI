@@ -17,12 +17,13 @@ def build_model(num_classes: int = 14, pretrained: bool = True) -> nn.Module:
     return model
 
 
-def save_checkpoint(model: nn.Module, path: str, epoch: int, labels: list[str]) -> None:
+def save_checkpoint(model: nn.Module, path: str, epoch: int, labels: list[str], split_hashes=None) -> None:
     torch.save(
         {
             "model_state_dict": model.state_dict(),
             "epoch": epoch,
             "labels": labels,
+            "split_hashes": split_hashes or {},
         },
         path,
     )
