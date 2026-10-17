@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import math
+
 import torch
 from PIL import Image
 
@@ -20,10 +22,14 @@ class ChestXpertPredictor:
         checkpoint = torch.load(
             checkpoint_path,
             map_location=self.device,
-            weights_only=False,
+            weights_only=True,
         )
 
+        if not isinstance(checkpoint, dict) or "model_state_dict" not in checkpoint:
+            raise ValueError("Checkpoint must contain model_state_dict")
         self.labels = checkpoint.get("labels", list(LABELS))
+        if not isinstance(self.labels, (list, tuple)) or not self.labels:
+            raise ValueError("Checkpoint labels must be a non-empty list")
         self.model = build_model(
             num_classes=len(self.labels),
             pretrained=False,
@@ -35,6 +41,8 @@ class ChestXpertPredictor:
         self.transform = evaluation_transforms()
 
     def _predict_tensor(self, tensor: torch.Tensor, threshold: float = 0.5) -> list[dict]:
+        if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not math.isfinite(threshold) or not 0 <= threshold <= 1:
+            raise ValueError("threshold must be a finite number between 0 and 1")
         with torch.no_grad():
             probabilities = torch.sigmoid(self.model(tensor))[0].cpu().tolist()
 
