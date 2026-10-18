@@ -21,6 +21,7 @@ from torch.utils.data import DataLoader
 from app.inference.model import build_model, save_checkpoint
 from app.preprocessing.dataset import LABELS, ChestXrayDataset, expand_labels, load_metadata
 from app.preprocessing.transforms import evaluation_transforms, training_transforms
+from app.preprocessing.splits import split_metadata, manifest_hash
 
 
 ROOT = Path("data/raw/NIH_ChestXray14")
@@ -35,24 +36,11 @@ def read_image_list(path: Path) -> set[str]:
     return {line.strip() for line in path.read_text().splitlines() if line.strip()}
 
 
-def make_splits(df: pd.DataFrame):
+def make_splits(df: pd.DataFrame, validation_names=None):
     train_names = read_image_list(TRAIN_LIST)
     test_names = read_image_list(TEST_LIST)
 
-    train_df = df[df["Image Index"].isin(train_names)].copy()
-    test_df = df[df["Image Index"].isin(test_names)].copy()
-
-    overlap = set(train_df["Image Index"]) & set(test_df["Image Index"])
-    if overlap:
-        raise RuntimeError(f"Train/test overlap detected: {len(overlap)} images")
-
-    missing_train = train_names - set(train_df["Image Index"])
-    missing_test = test_names - set(test_df["Image Index"])
-    if missing_train or missing_test:
-        raise RuntimeError(
-            "Split manifest contains images missing from metadata: "
-            f"train={len(missing_train)}, test={len(missing_test)}"
-        )
+    train_df, _, test_df = split_metadata(df, train_names, test_names, validation_names)
 
     return train_df, test_df
 
@@ -73,6 +61,7 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--checkpoint", default=str(CHECKPOINT_DIR / "resnet18_latest.pt"))
     parser.add_argument("--data-root", default=str(ROOT), help="Dataset root directory.")
+    parser.add_argument("--validation-list", type=Path, help="Training-pool images reserved for threshold tuning; excluded from training.")
     return parser.parse_args()
 
 
@@ -104,7 +93,8 @@ def main() -> None:
     np.random.seed(args.seed)
 
     df = expand_labels(load_metadata(METADATA))
-    train_df, test_df = make_splits(df)
+    validation_names = read_image_list(args.validation_list) if args.validation_list else None
+    train_df, test_df = make_splits(df, validation_names)
 
     train_ds = ChestXrayDataset(
         train_df,
@@ -172,6 +162,11 @@ def main() -> None:
             str(checkpoint_path),
             epoch,
             list(LABELS),
+            split_hashes={
+                "train": manifest_hash(train_df["Image Index"]),
+                "validation": manifest_hash(validation_names or []),
+                "test": manifest_hash(test_df["Image Index"]),
+            },
         )
 
     print(f"Training complete. Checkpoint: {checkpoint_path}")

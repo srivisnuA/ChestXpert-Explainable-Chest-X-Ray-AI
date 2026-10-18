@@ -23,18 +23,23 @@ from app.inference.evaluate import collect_predictions
 from app.inference.model import build_model
 from app.preprocessing.dataset import LABELS, ChestXrayDataset, expand_labels, load_metadata
 from app.preprocessing.transforms import evaluation_transforms
+from app.preprocessing.splits import split_metadata, verify_validation_manifest
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--data-root", required=True)
+    parser.add_argument("--validation-list", type=Path, required=True,
+                        help="Explicit held-out training-pool manifest also excluded during training.")
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--min-threshold", type=float, default=0.05)
     parser.add_argument("--max-threshold", type=float, default=0.95)
     parser.add_argument("--step", type=float, default=0.05)
     args = parser.parse_args()
+    if not 0 <= args.min_threshold <= args.max_threshold <= 1 or not np.isfinite(args.step) or args.step <= 0:
+        raise ValueError("Threshold range must be within [0, 1] with a finite positive step")
 
     root = Path(args.data_root)
     metadata = root / "Data_Entry_2017_v2020.csv"
@@ -46,12 +51,15 @@ def main():
             f"Test data is not configured under {root}."
         )
 
-    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     df = expand_labels(load_metadata(metadata))
-    test_names = {
-        line.strip() for line in test_list.read_text().splitlines() if line.strip()
-    }
-    test_df = df[df["Image Index"].isin(test_names)].copy()
+    read_names = lambda path: {line.strip() for line in path.read_text().splitlines() if line.strip()}
+    validation_names = read_names(args.validation_list)
+    if not validation_names:
+        raise ValueError("Validation manifest must be non-empty")
+    verify_validation_manifest(checkpoint, validation_names)
+    _, test_df, _ = split_metadata(df, read_names(root / "train_val_list.txt"),
+                                  read_names(test_list), validation_names)
 
     dataset = ChestXrayDataset(
         test_df,
@@ -108,7 +116,8 @@ def main():
     output = {
         "checkpoint": args.checkpoint,
         "data_root": str(root),
-        "test_images": len(test_df),
+        "validation_images": len(test_df),
+        "validation_manifest": str(args.validation_list),
         "threshold_search": {
             "min": args.min_threshold,
             "max": args.max_threshold,
